@@ -1,0 +1,38 @@
+##RenderMan RIB
+version 3.04
+Display "tritexels.tif" "tiff" "rgba"
+Option "texture" "enable lerp" [1]
+ShadingInterpolation "smooth"
+PixelSamples 3 3
+PixelFilter "mitchell" 4 4
+Format 512 512 1
+FrameBegin 1
+
+Clipping .1 1
+Projection "orthographic"
+ScreenWindow -1 1 -1 1
+Rotate 0 0 0 1 
+Scale 1.8 1.8 1 
+Translate 0 -.1 .5
+
+WorldBegin
+Surface "ptexcolor" "string mapname" ["triangle.ptx"] "string filter" ["point"]
+SubdivisionMesh "loop" [3 3 3 3 3 3 3 3 3] 
+[0 1 2 2 1 3 1 4 3 3 4 5 4 6 5 2 3 7 7 3 8 3 5 8 7 8 9]
+["interpolateboundary"] [1 0] [1] [] 
+"P" [
+-0.499327 -0.28492501 0
+-0.165994 -0.28492501 0
+-0.33333299 -0 0
+-0 -0 0
+0.16734 -0.28492501 0
+0.33333299 -0 0
+0.500673 -0.28492501 0
+-0.167339 0.284926 0
+0.165994 0.284926 0
+-0.001346 0.56985098 0
+]
+"uniform float __faceindex" [0 1 2 3 4 5 6 7 8]
+
+WorldEnd
+FrameEnd

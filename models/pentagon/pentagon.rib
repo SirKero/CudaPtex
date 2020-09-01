@@ -1,0 +1,33 @@
+##RenderMan RIB
+version 3.04
+Display "pentagon.tif" "tiff" "rgba" 
+Sides 2
+ShadingRate 1
+ShadingInterpolation "smooth"
+Attribute "derivatives" "centered" [1]
+PixelSamples 6 6
+PixelFilter "mitchell" 4 4
+Format 512 512 1
+FrameBegin 1
+Clipping 0.36559501 2.25823
+Projection "orthographic" 
+ScreenWindow -.5 .5 -.5 .5
+Scale 1 1 -1
+ConcatTransform [1.000000 0.000000 0.000000 0.000000 0.000000 1.000000 0.000000 0.000000 0.000000 0.000000 1.000000 0.000000 -0.096967 -0.498074 -0.994659 1.000000 ]
+WorldBegin 
+AttributeBegin 
+Surface "ptexcolor" "string mapname" ["pentagon.ptx"]
+		SubdivisionMesh "catmull-clark"  [5 ] [0 2 3 4 1  ]
+		["interpolateboundary" "facevaryinginterpolateboundary"] [1 0 1 0] [2 0] []
+		  "P"  [
+		0.453789 0.003920 0.000000  
+		0.674317 0.682633 0.000000  
+		-0.259855 0.003920 0.000000  
+		-0.480383 0.682633 0.000000  
+		0.096967 1.102101 0.000000  
+		]
+		  "facevarying float __faceindex"  [0 1 2 3 4  ]
+
+AttributeEnd 
+WorldEnd 
+FrameEnd 

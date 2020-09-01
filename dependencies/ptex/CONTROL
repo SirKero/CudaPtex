@@ -1,0 +1,8 @@
+Package: ptex
+Version: 2.3.2-1
+Depends: zlib
+Architecture: x64-windows
+Multi-Arch: same
+Abi: 67993282ea6e4a3d64cdda0b3b2db02e8410f5ff
+Description: Per-Face Texture Mapping for Production Rendering.
+Type: Port

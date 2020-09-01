@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source">
+      <UniqueIdentifier>{41105a4a-576e-4a05-bf8e-f34aa09d1b60}</UniqueIdentifier>
+      <Extensions>.cpp;.cu</Extensions>
+    </Filter>
+    <Filter Include="Include">
+      <UniqueIdentifier>{3f567fdb-f786-498d-a63a-a2d28c6d3443}</UniqueIdentifier>
+      <Extensions>.h;.hpp</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="src\allocator.cu">
+      <Filter>Source</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\main.cu">
+      <Filter>Source</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\ptex.cu">
+      <Filter>Source</Filter>
+    </CudaCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\allocator.hpp">
+      <Filter>Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\error.hpp">
+      <Filter>Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\residency.hpp">
+      <Filter>Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\synchronize.hpp">
+      <Filter>Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\unique_device_ptr.hpp">
+      <Filter>Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ptex.hpp">
+      <Filter>Include</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
