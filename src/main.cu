@@ -1,6 +1,8 @@
 #include <iostream>
 #include <Ptexture.h>
 #include <memory>
+#include <vector>
+#include "ptex.hpp"
 
 #include "unique_device_ptr.hpp"
 
@@ -18,11 +20,18 @@ int main(){
 		std::cout << "Error: Could not read ptex texture \n";
 	}
 
+	uint16_t test = -1;
+	std::cout << test << '\n' << '\n' << '\n';
+
 	int texSize = texture->numChannels() * texture->getFaceInfo(face).res.size();
-	auto tex_ptr_raw = std::make_unique<unsigned char[]>(texSize);
+	//auto tex_ptr_raw = std::make_unique<unsigned char[]>(texSize);
+	std::vector<uint8_t> tex_ptr_raw;
+	tex_ptr_raw.resize(texSize);
 	
-	texture->getData(0, tex_ptr_raw.get(), 0);
+
+	texture->getData(0, tex_ptr_raw.data(), 0);
 	int count = 0;
+	/*
 	for (int i = 0; i < texSize; i++) {
 		std::cout << +tex_ptr_raw[i];
 		if (count == 2) {
@@ -34,7 +43,7 @@ int main(){
 			std::cout << ",";
 		}
 	}
-
+	*/
 	unique_device_ptr<Device::CPU, float[]> tex_ptr = make_udevptr_array < Device::CPU, float, false>(texSize);
 	//convert char to float
 	for (int i = 0; i < texSize; i++) {
@@ -56,12 +65,24 @@ int main(){
 			std::cout << ",";
 		}
 	}
+	texture->release();
 
-	float testres[3];
-	for (int i = 0; i < 3; i++) {
-		testres[i] = 0.0f;
+	cudaPtex ptexReader;
+	ptexReader.loadFile("models/teapot/teapot.ptx", true);
+
+	unique_device_ptr<Device::CPU, float[]> test_ptr = make_udevptr_array < Device::CPU, float, false>(ptexReader.getTotalDataSize());
+	cudaMemcpy(test_ptr.get(), ptexReader.getDataPointer(), ptexReader.getTotalDataSize() * sizeof(float), cudaMemcpyDefault);
+	count = 0;
+	std::cout << "\n\n\nTest Test Test Test Test\n\n\n";
+	for (int i = 0; i < texSize; i++) {
+		std::cout << test_ptr[i];
+		if (count == 2) {
+			count = 0;
+			std::cout << "\n";
+		}
+		else {
+			count++;
+			std::cout << ",";
+		}
 	}
-	texture->getPixel(0, 0, 0, testres, 0, 1);
-
-	std::cout << "\n" << testres[0] << "," << testres[1] << "," << testres[2] << "\n";
 }
