@@ -40,12 +40,12 @@ void PtexelFetch(float* res, int faceIdx, float u, float v, int numChannels, con
 		res[i] = texArr[point + i];
 	}
 }
-//TODO: Number channels berücksichtigen (triangles evtl auch)
+//TODO: triangle faces support
 
 
 __device__
-void PtexelFetch(float* res, int faceIdx, float u, float v, const cudaPtex& tex) {
-	PtexelFetch(res, faceIdx, u, v,tex.getNumChannels(), tex.getDataPointer(), tex.getOffsetPointer(), tex.getResLog2U(), tex.getResLog2V());
+void PtexelFetch(float* res, int faceIdx, float u, float v, cudaPtexture tex) {
+	PtexelFetch(res, faceIdx, u, v,tex.numChannels, tex.data, tex.offset, tex.ResLog2U, tex.ResLog2V);
 }
 
 void cudaPtex::loadFile(const char* filepath, bool premultiply) {
@@ -78,7 +78,7 @@ void cudaPtex::loadFile(const char* filepath, bool premultiply) {
 		resVBuf[i] = faceInfo.res.vlog2;
 		totalDataSize += faceInfo.res.size() * m_numChannels;
 		if (i < m_numFaces - 1) 
-			offsetBuf[i + 1] = faceInfo.res.size() * m_numChannels * sizeof(float);	//offset for the data
+			offsetBuf[i + 1] = totalDataSize;	//offset for the data
 		
 	}
 
@@ -122,10 +122,11 @@ void cudaPtex::loadFile(const char* filepath, bool premultiply) {
 
 	cudaMemcpy(m_data.get(), dataBuf.get(), totalDataSize * sizeof(float), cudaMemcpyDefault);
 
-	texture->release(); //release ptex texture
+	texture->release(); //ptex object is not needed anymore
 }
 
 
+//TODO: Support half type
 template <typename T>
 void cudaPtex::readPtexture<T>(float* desArr, Ptex::PtexTexture (*texture)) {
 	static_assert(std::is_same<T,uint8_t>::value || std::is_same<T, uint16_t>::value || std::is_same<T, float>::value, "Ptex has a not supported type");

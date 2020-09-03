@@ -33,90 +33,55 @@ __global__ void cudaTest(float* res ,int faceId, int dimX, int dimY ,int numChan
 	}
 }
 
+__global__ void cudaTest2(float* res, int faceId, int dimX, int dimY, cudaPtexture tex) {
+	unsigned int x = threadIdx.x;
+	unsigned int y = blockIdx.x;
+
+
+	float u = __uint2float_rz(threadIdx.x);
+	float v = __uint2float_rz(blockIdx.x);
+	u /= __int2float_rz(dimX);
+	v /= __int2float_rz(dimY);
+
+	float tmpArr[3];
+	PtexelFetch(tmpArr, faceId, u, v, tex);
+
+	for (int i = 0; i < tex.numChannels; i++) {
+		res[tex.numChannels * (x + dimX * y) + i] = tmpArr[i];
+	}
+}
 
 int main(){
 
-	int face = 0;
+	int face = 2;
 
 	Ptex::PtexTexture* texture;
 	Ptex::String ptex_error;
-	texture = Ptex::PtexTexture::open("models/teapot/teapot.ptx",ptex_error, true);
+	cudaPtex pTexture;
+	pTexture.loadFile("models/teapot/teapot.ptx", true);
+	texture = Ptex::PtexTexture::open("models/teapot/teapot.ptx", ptex_error, true);
 
 	if (texture == nullptr) {
 		std::cout << "Error: Could not read ptex texture \n";
 	}
 
-	uint16_t test = -1;
-	std::cout << test << '\n' << '\n' << '\n';
-
 	int texSize = texture->numChannels() * texture->getFaceInfo(face).res.size();
 	int ResU = texture->getFaceInfo(face).res.u();
 	int ResV = texture->getFaceInfo(face).res.v();
-	//auto tex_ptr_raw = std::make_unique<unsigned char[]>(texSize);
-	std::vector<uint8_t> tex_ptr_raw;
-	tex_ptr_raw.resize(texSize);
-	
-
-	texture->getData(0, tex_ptr_raw.data(), 0);
-	int count = 0;
-	
-	unique_device_ptr<Device::CPU, float[]> tex_ptr = make_udevptr_array < Device::CPU, float, false>(texSize);
-	//convert char to float
-	for (int i = 0; i < texSize; i++) {
-		tex_ptr[i] = static_cast<float>(tex_ptr_raw[i]) / 255.0f;
-	}
-
-
-	std::cout << "\n \n So hier beginnt das convertierte array \n \n";
-	count = 0;
-
-	for (int i = 0; i < texSize; i++) {
-		std::cout << +tex_ptr[i];
-		if (count == 2) {
-			count = 0;
-			std::cout << "\n";
-		}
-		else {
-			count++;
-			std::cout << ",";
-		}
-	}
-
-
-
-	texture->release();
-
-	cudaPtex pTexture;
-	pTexture.loadFile("models/teapot/teapot.ptx", true);
-
-	/*
-	unique_device_ptr<Device::CPU, float[]> test_ptr = make_udevptr_array < Device::CPU, float, false>(ptexReader.getTotalDataSize());
-	cudaMemcpy(test_ptr.get(), ptexReader.getDataPointer(), ptexReader.getTotalDataSize() * sizeof(float), cudaMemcpyDefault);
-	count = 0;
-	std::cout << "\n\n\nTest Test Test Test Test\n\n\n";
-	for (int i = 0; i < texSize; i++) {
-		std::cout << test_ptr[i];
-		if (count == 2) {
-			count = 0;
-			std::cout << "\n";
-		}
-		else {
-			count++;
-			std::cout << ",";
-		}
-	}
-	*/
-
-	std::cout << "\n\n New Test: \n\n";
 
 	int testFaceSize = pTexture.getNumChannels() * ResU * ResV;
 	unique_device_ptr<Device::CUDA, float[]> testRes = make_udevptr_array <Device::CUDA, float, false>(testFaceSize);
 	unique_device_ptr<Device::CPU, float[]> cpuRes = make_udevptr_array <Device::CPU, float, false>(testFaceSize);
+	unique_device_ptr<Device::CPU, float[]> cpuRes2 = make_udevptr_array <Device::CPU, float, false>(testFaceSize);
 
-	cudaTest<<<ResV, ResU >>>(testRes.get(), face, ResU, ResV, pTexture.getNumChannels(), pTexture.getDataPointer(),
-		pTexture.getOffsetPointer(), pTexture.getResLog2U(), pTexture.getResLog2V());
+	//cudaTest<<<ResV, ResU >>>(testRes.get(), face, ResU, ResV, pTexture.getNumChannels(), pTexture.getDataPointer(),
+	//	pTexture.getOffsetPointer(), pTexture.getResLog2U(), pTexture.getResLog2V());
+
+	cudaTest2 << <ResV, ResU >> > (testRes.get(), face, ResU, ResV, pTexture.getTexture());
 
 	cudaMemcpy(cpuRes.get(), testRes.get(), testFaceSize * sizeof(float), cudaMemcpyDefault);
+
+	std::cout << "Cuda Sampled: \n\n";
 
 	for (int y = 0; y < ResV; y++) {
 		for (int x = 0; x < ResU; x++) {
@@ -124,23 +89,43 @@ int main(){
 		}
 		std::cout << '\n';
 	}
-	
-	texture = Ptex::PtexTexture::open("models/teapot/teapot.ptx", ptex_error, true);
 
-	if (texture == nullptr) {
-		std::cout << "Error: Could not read ptex texture \n";
-	}
-
-	std::cout << "\n\n Tex2 \n\n";
+	std::cout << "\n\n Ptex Sampled \n\n";
 
 	for (int y = 0; y < ResV; y++) {
 		for (int x = 0; x < ResU; x++) {
 			float result[1];
 			texture->getPixel(face, x, y, result, 0, 1);
 			std::cout << result[0]  << ",";
+			cpuRes2[x + y * ResU] = result[0];
 		}
 		std::cout << '\n';
 	}
+
+
+	std::cout << "\n\n Diff \n\n";
+	
+	for (int y = 0; y < ResV; y++) {
+		for (int x = 0; x < ResU; x++) {
+			std::cout << std::abs(cpuRes[x + y * ResU] - cpuRes2[x + y * ResU])  << ",";
+		}
+		std::cout << '\n';
+	}
+
+	int numFaces = texture->numFaces();
+
+	unique_device_ptr<Device::CPU, uint32_t[]> cpuOffsets = make_udevptr_array <Device::CPU, uint32_t, false>(numFaces);
+	cudaMemcpy(cpuOffsets.get(), pTexture.getOffsetPointer(), numFaces * sizeof(uint32_t), cudaMemcpyDefault);
+
+	std::cout << "\n\n Offsets \n\n";
+
+	for (int i = 0; i < numFaces; i++) {
+		std::cout << cpuOffsets[i] << ",";
+		if (i % 5 == 0) {
+			std::cout << '\n';
+		}
+	}
+
 
 	texture->release();
 }

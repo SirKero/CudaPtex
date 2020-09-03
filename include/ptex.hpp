@@ -9,6 +9,14 @@
 
 using namespace mufflon;
 	
+struct cudaPtexture {
+	float* data;
+	uint32_t* offset;
+	uint8_t* ResLog2U;
+	uint8_t* ResLog2V;
+	uint8_t numChannels;
+};
+
 class cudaPtex {
 public:
 	//Loading the Ptex File into the class intern Cuda Array(m_data)
@@ -16,34 +24,38 @@ public:
 	__host__
 	void loadFile(const char* filepath, bool premultiply = true);
 
-	__host__ __device__
+	
 	float* getDataPointer() const{
 		return m_data.get();
 	}
 
-	__host__ __device__
+	
 	int getTotalDataSize() const {
 		return m_totalDataSize;
 	}
 
-	__host__ __device__ 
+	
 	uint32_t* getOffsetPointer() const{
 		return m_offsets.get();
 	}
 
-	__host__ __device__
+	
 	uint8_t* getResLog2U() const{
 		return m_ResLog2U.get();
 	}
 
-	__host__ __device__
+	
 	uint8_t* getResLog2V() const {
 		return m_ResLog2V.get();
 	}
 
-	__host__ __device__
-		uint8_t getNumChannels() const {
+	
+	uint8_t getNumChannels() const {
 		return m_numChannels;
+	}
+
+	cudaPtexture getTexture() {
+		return cudaPtexture{getDataPointer(), getOffsetPointer(), getResLog2U(), getResLog2V(), getNumChannels()};
 	}
 
 private:
@@ -61,11 +73,13 @@ private:
 	void readPtexture(float* desArr, Ptex::PtexTexture (*texture));
 };
 
+
+
 __device__ 
 void PtexelFetch(float* res,int faceIdx, float u, float v,int numChannels , const float* texArr, const uint32_t* texOffsetArr, const uint8_t* ResLog2U, const uint8_t* ResLog2V);
 
 __device__
-void PtexelFetch(float* res, int faceIdx, float u, float v, const cudaPtex& tex);
+void PtexelFetch(float* res, int faceIdx, float u, float v, cudaPtexture tex);
 
 
 // Can be deleted
