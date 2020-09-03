@@ -13,8 +13,40 @@
 #include <type_traits>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
+#include <stdint.h>
 
 
+__device__ 
+int powI(int base, uint8_t pow) {
+	int result = base;
+	for (int i = 1; i < pow; i++) {
+		result *= base;
+	}
+	return result;
+}
+
+//Cuda functions
+__device__ 
+void PtexelFetch(float* res, int faceIdx, float u, float v, int numChannels, const float* texArr, const uint32_t* texOffsetArr, const uint8_t* ResLog2U, const uint8_t* ResLog2V) {
+	//calc Res U and Res V from the log2 variants from the array
+	int ResU = powI(2, ResLog2U[faceIdx]);
+	int ResV = powI(2, ResLog2V[faceIdx]);
+
+	int offset = texOffsetArr[faceIdx];
+
+	int point = offset + ResU*numChannels * (u  + v * ResV);
+
+	for (int i = 0; i < numChannels; i++) {
+		res[i] = texArr[point + i];
+	}
+}
+//TODO: Number channels berücksichtigen (triangles evtl auch)
+
+
+__device__
+void PtexelFetch(float* res, int faceIdx, float u, float v, const cudaPtex& tex) {
+	PtexelFetch(res, faceIdx, u, v,tex.getNumChannels(), tex.getDataPointer(), tex.getOffsetPointer(), tex.getResLog2U(), tex.getResLog2V());
+}
 
 void cudaPtex::loadFile(const char* filepath, bool premultiply) {
 	
@@ -89,6 +121,8 @@ void cudaPtex::loadFile(const char* filepath, bool premultiply) {
 	m_data = make_udevptr_array<Device::CUDA, float, false>(totalDataSize);
 
 	cudaMemcpy(m_data.get(), dataBuf.get(), totalDataSize * sizeof(float), cudaMemcpyDefault);
+
+	texture->release(); //release ptex texture
 }
 
 
@@ -110,7 +144,7 @@ void cudaPtex::readPtexture<T>(float* desArr, Ptex::PtexTexture (*texture)) {
 		}
 		//uint8 and uint16 has to be converted to the range from 0 to 1
 		else {
-			T max = -1;	//max val of uint8 and uint16
+			T max = std::numeric_limits<T>::max();	//max val of uint8 and uint16
 			float maxf = static_cast<float>(max);
 			for (int i = 0; i < texSize; i++) 
 				desArr[i + offset] = static_cast<float>(faceDataBuffer[i]) / maxf;

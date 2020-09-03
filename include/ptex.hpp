@@ -8,22 +8,44 @@
 #include "Ptexture.h"
 
 using namespace mufflon;
-
 	
 class cudaPtex {
 public:
-	//loads File into the cuda Array
+	//Loading the Ptex File into the class intern Cuda Array(m_data)
+	//it also fills the offset and u,v resolutions (in log2)
+	__host__
 	void loadFile(const char* filepath, bool premultiply = true);
 
-	float* getDataPointer() {
+	__host__ __device__
+	float* getDataPointer() const{
 		return m_data.get();
 	}
-	int getTotalDataSize() {
+
+	__host__ __device__
+	int getTotalDataSize() const {
 		return m_totalDataSize;
 	}
-	uint32_t* getOffsetPointer() {
+
+	__host__ __device__ 
+	uint32_t* getOffsetPointer() const{
 		return m_offsets.get();
 	}
+
+	__host__ __device__
+	uint8_t* getResLog2U() const{
+		return m_ResLog2U.get();
+	}
+
+	__host__ __device__
+	uint8_t* getResLog2V() const {
+		return m_ResLog2V.get();
+	}
+
+	__host__ __device__
+		uint8_t getNumChannels() const {
+		return m_numChannels;
+	}
+
 private:
 	bool m_loaded = false;
 	unique_device_ptr<Device::CUDA, float[]> m_data;			//1D Array with all the colors
@@ -38,6 +60,14 @@ private:
 	template<typename T>
 	void readPtexture(float* desArr, Ptex::PtexTexture (*texture));
 };
+
+__device__ 
+void PtexelFetch(float* res,int faceIdx, float u, float v,int numChannels , const float* texArr, const uint32_t* texOffsetArr, const uint8_t* ResLog2U, const uint8_t* ResLog2V);
+
+__device__
+void PtexelFetch(float* res, int faceIdx, float u, float v, const cudaPtex& tex);
+
+
 // Can be deleted
 /*
 struct PtexFaceData

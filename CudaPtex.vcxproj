@@ -23,6 +23,9 @@
     <ClInclude Include="include\synchronize.hpp" />
     <ClInclude Include="include\unique_device_ptr.hpp" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="cpp.hint" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{E4B0EEA5-34D5-4C62-A3F1-FE99C76E2A85}</ProjectGuid>
     <RootNamespace>CudaPtex</RootNamespace>
@@ -77,6 +80,9 @@
       <TargetMachinePlatform>64</TargetMachinePlatform>
       <AdditionalDeps>%(AdditionalDeps)</AdditionalDeps>
       <Include>$(SolutionDir)\include;%(Include)</Include>
+      <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
+      <AdditionalCompilerOptions>
+      </AdditionalCompilerOptions>
     </CudaCompile>
     <PostBuildEvent>
       <Command>xcopy /y /d  "$(ProjectDir)\dependencies\ptex\bin\*.dll" "$(OutDir)"
@@ -103,6 +109,9 @@ xcopy /y /d  "$(ProjectDir)\dependencies\zlib\bin\*.dll" "$(OutDir)" </Command>
       <TargetMachinePlatform>64</TargetMachinePlatform>
       <AdditionalDeps>%(AdditionalDeps)</AdditionalDeps>
       <Include>$(SolutionDir)\include;%(Include)</Include>
+      <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
+      <AdditionalCompilerOptions>
+      </AdditionalCompilerOptions>
     </CudaCompile>
     <PostBuildEvent>
       <Command>xcopy /y /d  "$(ProjectDir)\dependencies\ptex\bin\*.dll" "$(OutDir)"
