@@ -15,6 +15,7 @@ struct cudaPtexture {
 	uint8_t* ResLog2U;
 	uint8_t* ResLog2V;
 	uint8_t numChannels;
+	bool isTriangle;
 };
 
 class cudaPtex {
@@ -55,7 +56,7 @@ public:
 	}
 
 	cudaPtexture getTexture() {
-		return cudaPtexture{getDataPointer(), getOffsetPointer(), getResLog2U(), getResLog2V(), getNumChannels()};
+		return cudaPtexture{getDataPointer(), getOffsetPointer(), getResLog2U(), getResLog2V(), getNumChannels(), m_isTriangle};
 	}
 
 private:
@@ -65,7 +66,8 @@ private:
 	unique_device_ptr < Device::CUDA, uint8_t[]> m_ResLog2U;		//1D Array with the res of the U. Length == numFaces
 	unique_device_ptr < Device::CUDA, uint8_t[]> m_ResLog2V;		//1D Array with the res of the V. Length == numFaces
 	uint8_t m_numChannels = 0;
-	uint16_t m_numFaces = 0;
+	uint32_t m_numFaces = 0;
+	bool m_isTriangle = false;
 	int m_totalDataSize;
 
 	
@@ -76,7 +78,7 @@ private:
 
 
 __device__ 
-void PtexelFetch(float* res,int faceIdx, float u, float v,int numChannels , const float* texArr, const uint32_t* texOffsetArr, const uint8_t* ResLog2U, const uint8_t* ResLog2V);
+void PtexelFetch(float* res,int faceIdx, float u, float v,int numChannels , const float* texArr, const uint32_t* texOffsetArr, const uint8_t* ResLog2U, const uint8_t* ResLog2V, bool isTriangle);
 
 __device__
 void PtexelFetch(float* res, int faceIdx, float u, float v, cudaPtexture tex);

@@ -27,17 +27,40 @@ int powI(int base, uint8_t pow) {
 
 //Cuda functions
 __device__ 
-void PtexelFetch(float* res, int faceIdx, float u, float v, int numChannels, const float* texArr, const uint32_t* texOffsetArr, const uint8_t* ResLog2U, const uint8_t* ResLog2V) {
+void PtexelFetch(float* res, int faceIdx, float u, float v, int numChannels, const float* texArr, 
+	const uint32_t* texOffsetArr, const uint8_t* ResLog2U, const uint8_t* ResLog2V, bool isTriangle) {
 	//calc Res U and Res V from the log2 variants from the array
 	int ResU = powI(2, ResLog2U[faceIdx]);
 	int ResV = powI(2, ResLog2V[faceIdx]);
 
 	int offset = texOffsetArr[faceIdx];
+	int index;
+	if (!isTriangle) {
+		 index = offset + ResU * numChannels * (u + v * ResV);
+	}
+	else {
+		float resf = __int2float_rz(ResU);		//In triangle mode the textures are all square
+		float ut = u * resf;
+		float vt = v * resf;
+		float uIdx = floorf(ut);
+		float vIdx = floorf(vt);
+		int tmpIndex;
+		if ((ut - uIdx) + (vt - vIdx) <= 1) {
+			tmpIndex = __float2int_rz(uIdx + vIdx * resf);
+		}
+		else {
+			tmpIndex = __float2int_rz((resf * resf - 1) - (vIdx + uIdx * resf));
+		}
 
-	int point = offset + ResU*numChannels * (u  + v * ResV);
+		int iU = tmpIndex % ResU;
+		int iV = tmpIndex / ResV;
+
+		index = offset + numChannels * (iU + iV * ResU);
+
+	}
 
 	for (int i = 0; i < numChannels; i++) {
-		res[i] = texArr[point + i];
+		res[i] = texArr[index + i];
 	}
 }
 //TODO: triangle faces support
@@ -45,7 +68,7 @@ void PtexelFetch(float* res, int faceIdx, float u, float v, int numChannels, con
 
 __device__
 void PtexelFetch(float* res, int faceIdx, float u, float v, cudaPtexture tex) {
-	PtexelFetch(res, faceIdx, u, v,tex.numChannels, tex.data, tex.offset, tex.ResLog2U, tex.ResLog2V);
+	PtexelFetch(res, faceIdx, u, v,tex.numChannels, tex.data, tex.offset, tex.ResLog2U, tex.ResLog2V, tex.isTriangle);
 }
 
 void cudaPtex::loadFile(const char* filepath, bool premultiply) {
@@ -64,6 +87,11 @@ void cudaPtex::loadFile(const char* filepath, bool premultiply) {
 	m_numFaces = texture->numFaces();
 	m_numChannels = texture->numChannels();
 	
+	if (texture->meshType() == Ptex::MeshType::mt_triangle) {
+		m_isTriangle = true;
+	}
+	
+
 	//Create CPU side Buffers
 	uint64_t totalDataSize = 0;
 	auto offsetBuf = std::make_unique<uint32_t[]>(m_numFaces);
@@ -99,6 +127,8 @@ void cudaPtex::loadFile(const char* filepath, bool premultiply) {
 	
 	//tmpBuffer for dataArray
 	auto dataBuf = std::make_unique<float[]>(totalDataSize);
+
+	Ptex::DataType dataType = texture->dataType();
 
 	//Check in which Data type the ptex file is in an read accordingly
 	switch (texture->dataType()) {
@@ -140,15 +170,15 @@ void cudaPtex::readPtexture<T>(float* desArr, Ptex::PtexTexture (*texture)) {
 
 		//if it is a float it can be copied
 		if (std::is_same<T, float>::value) {	
-			for (int i = 0; i < texSize; i++) 
-				desArr[i + offset] = faceDataBuffer[i];
+			for (int j = 0; j < texSize; j++) 
+				desArr[j + offset] = faceDataBuffer[j];
 		}
 		//uint8 and uint16 has to be converted to the range from 0 to 1
 		else {
 			T max = std::numeric_limits<T>::max();	//max val of uint8 and uint16
 			float maxf = static_cast<float>(max);
-			for (int i = 0; i < texSize; i++) 
-				desArr[i + offset] = static_cast<float>(faceDataBuffer[i]) / maxf;
+			for (int j = 0; j < texSize; j++) 
+				desArr[j + offset] = static_cast<float>(faceDataBuffer[j]) / maxf;
 		}
 		//add to offset
 		offset += texSize;
