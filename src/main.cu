@@ -14,38 +14,22 @@
 
 using namespace mufflon;
 
-
-__global__ void cudaTest(float* res ,int faceId, int dimX, int dimY ,int numChannels,  const float* texArr, const uint32_t* texOffsetArr, const uint8_t* ResLog2U, const uint8_t* ResLog2V) {
-	unsigned int x = threadIdx.x;
-	unsigned int y = blockIdx.x;
-
-	
-	float u = __uint2float_rz(threadIdx.x);
-	float v = __uint2float_rz(blockIdx.x);
-	u /= __int2float_rz(dimX);
-	v /= __int2float_rz(dimY);
-
-	float tmpArr[3];
-	PtexelFetch(tmpArr, faceId, u, v, numChannels, texArr, texOffsetArr,ResLog2U, ResLog2V, false);
-	
-	for (int i = 0; i < numChannels; i++) {
-		res[numChannels * (x + dimX * y) + i] = tmpArr[i];
-	}
-}
-
+//Test Kernel. It returns an array with all read texels
 __global__ void cudaTest2(float* res, int faceId, int dimX, int dimY, cudaPtexture tex) {
 	unsigned int x = threadIdx.x;
 	unsigned int y = blockIdx.x;
 
-
+	//Had to use specific conversion, if not result is wrong or NaN
 	float u = __uint2float_rz(threadIdx.x);
 	float v = __uint2float_rz(blockIdx.x);
 	u /= __int2float_rz(dimX);
 	v /= __int2float_rz(dimY);
 
+	//Sample texel
 	float tmpArr[3];
 	PtexelFetch(tmpArr, faceId, u, v, tex);
 
+	//copy result to the returned array
 	for (int i = 0; i < tex.numChannels; i++) {
 		res[tex.numChannels * (x + dimX * y) + i] = tmpArr[i];
 	}
@@ -53,29 +37,32 @@ __global__ void cudaTest2(float* res, int faceId, int dimX, int dimY, cudaPtextu
 
 int main(){
 
-	int face = 10000;
+	int face = 10000;	//FaceID, if bigger than numFaces, invalid results are printed
 
 	//std::string filepath = "models/teapot/teapot.ptx";
 	std::string filepath = "models/bunny/bunny.ptx";
 	//std::string filepath = "models/triangle/triangle.ptx";
 
+	//Fill the cuda Texture object
+	cudaPtex pTexture;
+	pTexture.loadFile(filepath.c_str(), true);
+
+	//Ptex texture as comparison
 	Ptex::PtexTexture* texture;
 	Ptex::String ptex_error;
 	Ptex::PtexFilter* filter;
-	cudaPtex pTexture;
-	pTexture.loadFile(filepath.c_str(), true);
 	texture = Ptex::PtexTexture::open(filepath.c_str(), ptex_error, true);
-
 	if (texture == nullptr) {
 		std::cout << "Error: Could not read ptex texture \n";
 	}
 
+	//Filter for correct u/v readings on triangles
 	Ptex::PtexFilter::FilterType filterType = Ptex::PtexFilter::FilterType::f_point;
 	Ptex::PtexFilter::Options opts(filterType);
 	filter = Ptex::PtexFilter::getFilter(texture, opts);
 
 	
-
+	//Needed vars
 	int texSize = texture->numChannels() * texture->getFaceInfo(face).res.size();
 	int ResU = texture->getFaceInfo(face).res.u();
 	int ResV = texture->getFaceInfo(face).res.v();
@@ -87,13 +74,11 @@ int main(){
 	unique_device_ptr<Device::CPU, float[]> cpuRes = make_udevptr_array <Device::CPU, float, false>(testFaceSize);
 	unique_device_ptr<Device::CPU, float[]> cpuRes2 = make_udevptr_array <Device::CPU, float, false>(testFaceSize);
 
-	//cudaTest<<<ResV, ResU >>>(testRes.get(), face, ResU, ResV, pTexture.getNumChannels(), pTexture.getDataPointer(),
-	//	pTexture.getOffsetPointer(), pTexture.getResLog2U(), pTexture.getResLog2V());
-
 	cudaTest2 << <ResV, ResU >> > (testRes.get(), face, ResU, ResV, pTexture.getTexture());
 
 	cudaMemcpy(cpuRes.get(), testRes.get(), testFaceSize * sizeof(float), cudaMemcpyDefault);
 
+	//Prints the CUDA Samples. (0,0) is in the left top corner
 	std::cout << "Cuda Sampled: \n\n";
 
 	for (int y = 0; y < ResV; y++) {
@@ -107,6 +92,7 @@ int main(){
 		std::cout << '\n';
 	}
 
+	//Prints the Ptex Samples. (0,0) is in the left top corner
 	std::cout << "\n\n Ptex Sampled \n\n";
 
 	for (int y = 0; y < ResV; y++) {
@@ -123,7 +109,7 @@ int main(){
 		std::cout << '\n';
 	}
 
-
+	//Prints the difference between both. Should be 0 or very small (float precision error)
 	std::cout << "\n\n Max Diff \n\n";
 	float diff = 0.0;
 

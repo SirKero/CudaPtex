@@ -4,18 +4,18 @@
  */
 
 #include "ptex.hpp"
-
-
 #include <iostream>
 #include <math.h>
 #include <memory>
 #include <vector>
 #include <type_traits>
+#include <stdint.h>
+//CUDA
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
-#include <stdint.h>
 
 
+// Calculates the power for an int base and an uin8_t power.
 __device__ 
 int powI(int base, uint8_t pow) {
 	int result = base;
@@ -38,18 +38,19 @@ void PtexelFetch(float* res, int faceIdx, float u, float v, int numChannels, con
 	if (!isTriangle) {
 		 index = offset + ResU * numChannels * (u + v * ResV);
 	}
+	//For triangles: texture fetch after http://ptex.us/tritex.html
 	else {
-		float resf = __int2float_rz(ResU);		//In triangle mode the textures are all square
+		float resf = __int2float_rz(ResU);		
 		float ut = u * resf;
 		float vt = v * resf;
 		float uIdx = floorf(ut);
 		float vIdx = floorf(vt);
 		int tmpIndex;
-		if ((ut - uIdx) + (vt - vIdx) <= 1) {
+		if ((ut - uIdx) + (vt - vIdx) <= 1.0f) {
 			tmpIndex = __float2int_rz(uIdx + vIdx * resf);
 		}
 		else {
-			tmpIndex = __float2int_rz((resf * resf - 1) - (vIdx + uIdx * resf));
+			tmpIndex = __float2int_rz((resf * resf - 1.0f) - (vIdx + uIdx * resf));
 		}
 
 		int iU = tmpIndex % ResU;
@@ -63,7 +64,7 @@ void PtexelFetch(float* res, int faceIdx, float u, float v, int numChannels, con
 		res[i] = texArr[index + i];
 	}
 }
-//TODO: triangle faces support
+
 
 
 __device__
@@ -74,16 +75,16 @@ void PtexelFetch(float* res, int faceIdx, float u, float v, cudaPtexture tex) {
 void cudaPtex::loadFile(const char* filepath, bool premultiply) {
 	
 	//Load texture from file
-	
 	Ptex::PtexTexture* texture;
 	Ptex::String ptexErr;
 	texture = Ptex::PtexTexture::open(filepath, ptexErr, premultiply);
+	//In experience this only triggers if the file is not a ptex file
 	if (texture == nullptr) {
 		std::cerr << "Ptex Error: " << ptexErr.c_str() << '\n';
 		return;
 	}
 
-	//calc needed sizes
+	//Get info about the texture
 	m_numFaces = texture->numFaces();
 	m_numChannels = texture->numChannels();
 	
@@ -91,14 +92,13 @@ void cudaPtex::loadFile(const char* filepath, bool premultiply) {
 		m_isTriangle = true;
 	}
 	
-
 	//Create CPU side Buffers
 	uint64_t totalDataSize = 0;
 	auto offsetBuf = std::make_unique<uint32_t[]>(m_numFaces);
 	auto resUBuf = std::make_unique<uint8_t[]>(m_numFaces);
 	auto resVBuf = std::make_unique<uint8_t[]>(m_numFaces);
 	
-	//Fill helpers
+	//Fill helpers from the Ptex FaceInfo
 	offsetBuf[0] = 0;	//first one has no offset
 	for (int i = 0; i < m_numFaces; i++) {
 		Ptex::FaceInfo faceInfo = texture->getFaceInfo(i);
@@ -111,7 +111,6 @@ void cudaPtex::loadFile(const char* filepath, bool premultiply) {
 	}
 
 	//Copy data to GPU
-	
 	m_offsets = make_udevptr_array < Device::CUDA, uint32_t, false>(m_numFaces);
 	m_ResLog2U = make_udevptr_array < Device::CUDA, uint8_t, false>(m_numFaces);
 	m_ResLog2V = make_udevptr_array < Device::CUDA, uint8_t, false>(m_numFaces);
@@ -152,7 +151,8 @@ void cudaPtex::loadFile(const char* filepath, bool premultiply) {
 
 	cudaMemcpy(m_data.get(), dataBuf.get(), totalDataSize * sizeof(float), cudaMemcpyDefault);
 
-	texture->release(); //ptex object is not needed anymore
+	//release Ptex texture, it is not needed anymore
+	texture->release(); 
 }
 
 
@@ -175,7 +175,7 @@ void cudaPtex::readPtexture<T>(float* desArr, Ptex::PtexTexture (*texture)) {
 		}
 		//uint8 and uint16 has to be converted to the range from 0 to 1
 		else {
-			T max = std::numeric_limits<T>::max();	//max val of uint8 and uint16
+			T max = std::numeric_limits<T>::max();	//max val of uint8 and uint16 for division
 			float maxf = static_cast<float>(max);
 			for (int j = 0; j < texSize; j++) 
 				desArr[j + offset] = static_cast<float>(faceDataBuffer[j]) / maxf;
@@ -183,8 +183,6 @@ void cudaPtex::readPtexture<T>(float* desArr, Ptex::PtexTexture (*texture)) {
 		//add to offset
 		offset += texSize;
 	}
-	
-	
 }
 
 
