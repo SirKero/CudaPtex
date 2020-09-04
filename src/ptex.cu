@@ -17,11 +17,8 @@
 
 // Calculates the power for an int base and an uin8_t power.
 __device__ 
-int powI(int base, uint8_t pow) {
-	int result = base;
-	for (int i = 1; i < pow; i++) {
-		result *= base;
-	}
+int pow2(uint8_t pow) {
+	int result = 1 << pow;
 	return result;
 }
 
@@ -30,8 +27,8 @@ __device__
 void PtexelFetch(float* res, int faceIdx, float u, float v, int numChannels, const float* texArr, 
 	const uint32_t* texOffsetArr, const uint8_t* ResLog2U, const uint8_t* ResLog2V, bool isTriangle) {
 	//calc Res U and Res V from the log2 variants from the array
-	int ResU = powI(2, ResLog2U[faceIdx]);
-	int ResV = powI(2, ResLog2V[faceIdx]);
+	int ResU = pow2(ResLog2U[faceIdx]);
+	int ResV = pow2(ResLog2V[faceIdx]);
 
 	int offset = texOffsetArr[faceIdx];
 	int index;
@@ -93,14 +90,14 @@ void cudaPtex::loadFile(const char* filepath, bool premultiply) {
 	}
 	
 	//Create CPU side Buffers
-	uint64_t totalDataSize = 0;
+	uint32_t totalDataSize = 0;
 	auto offsetBuf = std::make_unique<uint32_t[]>(m_numFaces);
 	auto resUBuf = std::make_unique<uint8_t[]>(m_numFaces);
 	auto resVBuf = std::make_unique<uint8_t[]>(m_numFaces);
 	
 	//Fill helpers from the Ptex FaceInfo
 	offsetBuf[0] = 0;	//first one has no offset
-	for (int i = 0; i < m_numFaces; i++) {
+	for (unsigned int i = 0; i < m_numFaces; i++) {
 		Ptex::FaceInfo faceInfo = texture->getFaceInfo(i);
 		resUBuf[i] = faceInfo.res.ulog2;
 		resVBuf[i] = faceInfo.res.vlog2;

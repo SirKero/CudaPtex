@@ -4,6 +4,7 @@
 #include <vector>
 #include <stdint.h>
 #include "ptex.hpp"
+#include <algorithm>
 
 #include "unique_device_ptr.hpp"
 

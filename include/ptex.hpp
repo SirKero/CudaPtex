@@ -32,7 +32,7 @@ public:
 	}
 
 	
-	int getTotalDataSize() const {
+	uint32_t getTotalDataSize() const {
 		return m_totalDataSize;
 	}
 
@@ -70,7 +70,7 @@ private:
 	uint8_t m_numChannels = 0;										//Number of color channels in the texture
 	uint32_t m_numFaces = 0;										//Number of faces
 	bool m_isTriangle = false;										//The Indexes for triangles are calculated differently due to different save format
-	int m_totalDataSize;
+	uint32_t m_totalDataSize;
 
 	//Inter function used in load file to read the texture face by face and save
 	//the received data in the desArr. There are 4 possible types in which the Ptex texture was saved:
