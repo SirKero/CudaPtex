@@ -16,7 +16,7 @@
 using namespace mufflon;
 
 //Test Kernel. It returns an array with all read texels
-__global__ void cudaTest2(float* res, int faceId, int dimX, int dimY, cudaPtexture tex) {
+__global__ void cudaTest2(uint8_t* res, int faceId, int dimX, int dimY, cudaPtexture tex) {
 	unsigned int x = threadIdx.x;
 	unsigned int y = blockIdx.x;
 
@@ -27,7 +27,7 @@ __global__ void cudaTest2(float* res, int faceId, int dimX, int dimY, cudaPtextu
 	v /= __int2float_rz(dimY);
 
 	//Sample texel
-	float tmpArr[3];
+	uint8_t tmpArr[3];
 	PtexelFetch(tmpArr, faceId, u, v, tex);
 
 	//copy result to the returned array
@@ -38,10 +38,11 @@ __global__ void cudaTest2(float* res, int faceId, int dimX, int dimY, cudaPtextu
 
 int main(){
 
-	int face = 10000;	//FaceID, if bigger than numFaces, invalid results are printed
+	int face = 17;	//FaceID, if bigger than numFaces, invalid results are printed
 
-	//std::string filepath = "models/teapot/teapot.ptx";
-	std::string filepath = "models/bunny/bunny.ptx";
+
+	std::string filepath = "models/teapot/teapot.ptx";
+	//std::string filepath = "models/bunny/bunny.ptx";
 	//std::string filepath = "models/triangle/triangle.ptx";
 
 	//Fill the cuda Texture object
@@ -71,13 +72,13 @@ int main(){
 	float ResVF = static_cast<float>(ResV);
 	int numChannels = pTexture.getNumChannels();
 	int testFaceSize = numChannels * ResU * ResV;
-	unique_device_ptr<Device::CUDA, float[]> testRes = make_udevptr_array <Device::CUDA, float, false>(testFaceSize);
-	unique_device_ptr<Device::CPU, float[]> cpuRes = make_udevptr_array <Device::CPU, float, false>(testFaceSize);
-	unique_device_ptr<Device::CPU, float[]> cpuRes2 = make_udevptr_array <Device::CPU, float, false>(testFaceSize);
+	unique_device_ptr<Device::CUDA, uint8_t[]> testRes = make_udevptr_array <Device::CUDA, uint8_t, false>(testFaceSize);
+	unique_device_ptr<Device::CPU, uint8_t[]> cpuRes = make_udevptr_array <Device::CPU, uint8_t, false>(testFaceSize);
+	unique_device_ptr<Device::CPU, uint8_t[]> cpuRes2 = make_udevptr_array <Device::CPU, uint8_t, false>(testFaceSize);
 
 	cudaTest2 << <ResV, ResU >> > (testRes.get(), face, ResU, ResV, pTexture.getTexture());
 
-	cudaMemcpy(cpuRes.get(), testRes.get(), testFaceSize * sizeof(float), cudaMemcpyDefault);
+	cudaMemcpy(cpuRes.get(), testRes.get(), testFaceSize * sizeof(uint8_t), cudaMemcpyDefault);
 
 	//Prints the CUDA Samples. (0,0) is in the left top corner
 	std::cout << "Cuda Sampled: \n\n";
@@ -86,7 +87,7 @@ int main(){
 		for (int x = 0; x < ResU; x++) {
 			for (int i = 0; i < numChannels; i++) {
 				int idx = numChannels * (x + y * ResU) + i;
-				std::cout << cpuRes[idx] << ",";
+				std::cout << +cpuRes[idx] << ",";
 			}
 			
 		}
@@ -101,9 +102,10 @@ int main(){
 			float result[3];
 			filter->eval(result,0,numChannels,face,static_cast<float>(x)/ResUF, static_cast<float>(y)/ResVF, 0.1f,0.0f,0.0f,0.1f);
 			for (int i = 0; i < numChannels; i++) {
-				std::cout << result[i] << ",";
+				uint8_t resultU8 =static_cast<uint8_t>( result[i] * 255.0f);
+				std::cout << +resultU8 << ",";
 				int idx = numChannels * (x + y * ResU) + i;
-				cpuRes2[idx] = result[i];
+				cpuRes2[idx] = resultU8;
 			}
 			
 		}
@@ -112,7 +114,7 @@ int main(){
 
 	//Prints the difference between both. Should be 0 or very small (float precision error)
 	std::cout << "\n\n Max Diff \n\n";
-	float diff = 0.0;
+	int diff = 0;
 
 	for (int y = 0; y < ResV; y++) {
 		for (int x = 0; x < ResU; x++) {

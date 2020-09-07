@@ -13,6 +13,7 @@
 //CUDA
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
+#include <cuda_fp16.h>
 
 
 // Calculates the power for an int base and an uin8_t power.
@@ -24,8 +25,8 @@ int pow2(uint8_t pow) {
 
 //Cuda functions
 __device__ 
-void PtexelFetch(float* res, int faceIdx, float u, float v, int numChannels, const float* texArr, 
-	const uint32_t* texOffsetArr, const uint8_t* ResLog2U, const uint8_t* ResLog2V, bool isTriangle) {
+void PtexelFetch(void* res, int faceIdx, float u, float v, int numChannels, void* texArr, 
+	const uint32_t* texOffsetArr, const uint8_t* ResLog2U, const uint8_t* ResLog2V, cudaPtex::TextureType texType, bool isTriangle) {
 	//calc Res U and Res V from the log2 variants from the array
 	int ResU = pow2(ResLog2U[faceIdx]);
 	int ResV = pow2(ResLog2V[faceIdx]);
@@ -56,17 +57,40 @@ void PtexelFetch(float* res, int faceIdx, float u, float v, int numChannels, con
 		index = offset + numChannels * (iU + iV * ResU);
 
 	}
-
-	for (int i = 0; i < numChannels; i++) {
-		res[i] = texArr[index + i];
+	
+	//Sample Data depending on type
+	switch (texType)
+	{
+	case cudaPtex::dt_uint8:
+		for (int i = 0; i < numChannels; i++) {
+			reinterpret_cast<uint8_t*>(res)[i] = reinterpret_cast<uint8_t*>(texArr)[index + i];
+		}
+		break;
+	case cudaPtex::dt_uint16:
+		for (int i = 0; i < numChannels; i++) {
+			reinterpret_cast<uint16_t*>(res)[i] = reinterpret_cast<uint16_t*>(texArr)[index + i];
+		}
+		break;
+	case cudaPtex::dt_half:
+		for (int i = 0; i < numChannels; i++) {
+			reinterpret_cast<half*>(res)[i] = reinterpret_cast<half*>(texArr)[index + i];
+		}
+		break;
+	case cudaPtex::dt_float:
+		for (int i = 0; i < numChannels; i++) {
+			reinterpret_cast<float*>(res)[i] = reinterpret_cast<float*>(texArr)[index + i];
+		}
+		break;
 	}
+
+	
 }
 
 
 
 __device__
-void PtexelFetch(float* res, int faceIdx, float u, float v, cudaPtexture tex) {
-	PtexelFetch(res, faceIdx, u, v,tex.numChannels, tex.data, tex.offset, tex.ResLog2U, tex.ResLog2V, tex.isTriangle);
+void PtexelFetch(void* res, int faceIdx, float u, float v, cudaPtexture tex) {
+	PtexelFetch(res, faceIdx, u, v,tex.numChannels, tex.data, tex.offset, tex.ResLog2U, tex.ResLog2V,tex.texType, tex.isTriangle);
 }
 
 void cudaPtex::loadFile(const char* filepath, bool premultiply) {
@@ -107,57 +131,64 @@ void cudaPtex::loadFile(const char* filepath, bool premultiply) {
 		
 	}
 
-	//Copy data to GPU
-	m_offsets = make_udevptr_array < Device::CUDA, uint32_t, false>(m_numFaces);
-	m_ResLog2U = make_udevptr_array < Device::CUDA, uint8_t, false>(m_numFaces);
-	m_ResLog2V = make_udevptr_array < Device::CUDA, uint8_t, false>(m_numFaces);
-	
-	cudaMemcpy(m_offsets.get(), offsetBuf.get(), sizeof(uint32_t) * m_numFaces, cudaMemcpyDefault);
-	cudaMemcpy(m_ResLog2U.get(), resUBuf.get(), sizeof(uint8_t) * m_numFaces, cudaMemcpyDefault);
-	cudaMemcpy(m_ResLog2V.get(), resVBuf.get(), sizeof(uint8_t) * m_numFaces, cudaMemcpyDefault);
+	uint32_t extraBufferSize = m_numFaces * sizeof(uint32_t) + 2 * m_numFaces * sizeof(uint8_t);
 
-	//Release tmpBuffers
-	offsetBuf.release();
-	resUBuf.release();
-	resVBuf.release();
 	
-	//tmpBuffer for dataArray
-	auto dataBuf = std::make_unique<float[]>(totalDataSize);
-
-	Ptex::DataType dataType = texture->dataType();
+	uint32_t totalDataByteSize = 0;	//DataSize in Bytes (is depending on the Texture Type)
 
 	//Check in which Data type the ptex file is in an read accordingly
 	switch (texture->dataType()) {
-	case Ptex::DataType::dt_uint8 :
-		readPtexture<uint8_t>(dataBuf.get(), texture);
+	case Ptex::DataType::dt_uint8: 
+		readPtexture<uint8_t>(texture, totalDataSize, extraBufferSize);
+		m_DataType = TextureType::dt_uint8;
+		totalDataByteSize += totalDataSize * sizeof(uint8_t);
 		break;
-	case Ptex::DataType::dt_uint16 :
-		readPtexture<uint16_t>(dataBuf.get(), texture);
+
+	case Ptex::DataType::dt_uint16: 
+		readPtexture<uint16_t>(texture, totalDataSize, extraBufferSize);
+		m_DataType = TextureType::dt_uint16;
+		totalDataByteSize += totalDataSize * sizeof(uint16_t);
 		break;
-	case Ptex::DataType::dt_float :
-		readPtexture<float>(dataBuf.get(), texture);
+
+	case Ptex::DataType::dt_float: 
+		readPtexture<float>(texture, totalDataSize, extraBufferSize);
+		m_DataType = TextureType::dt_float;
+		totalDataByteSize += totalDataSize * sizeof(float);
 		break;
-	//TODO: support half data type
-	default:
-		std::cerr << "Ptex Error: half Data Type is not supported";
+
+	case Ptex::DataType::dt_half: 
+		readPtexture<half>(texture, totalDataSize, extraBufferSize);
+		m_DataType = TextureType::dt_half;
+		totalDataByteSize += totalDataSize * sizeof(half);
+		break;
 	}
+
+	//Copy Data to the GPU
+	
+	m_offsetPtr = reinterpret_cast<uint32_t*>(& m_dataArr[totalDataByteSize]);
+	cudaMemcpy(m_offsetPtr, offsetBuf.get(), m_numFaces * sizeof(uint32_t), cudaMemcpyDefault);
+	m_resLog2UPtr = reinterpret_cast<uint8_t*>(&m_dataArr[totalDataByteSize  + m_numFaces * sizeof(uint32_t)]);
+	cudaMemcpy(m_resLog2UPtr, resUBuf.get(), m_numFaces * sizeof(uint8_t), cudaMemcpyDefault); 
+	m_resLog2VPtr = reinterpret_cast<uint8_t*>(&m_dataArr[totalDataByteSize + m_numFaces * sizeof(uint32_t) + m_numFaces * sizeof(uint8_t)]);
+	cudaMemcpy(m_resLog2VPtr, resVBuf.get(), m_numFaces * sizeof(uint8_t), cudaMemcpyDefault);
 
 	//Copy data to gpu
 	m_totalDataSize = totalDataSize;
-	m_data = make_udevptr_array<Device::CUDA, float, false>(totalDataSize);
-
-	cudaMemcpy(m_data.get(), dataBuf.get(), totalDataSize * sizeof(float), cudaMemcpyDefault);
 
 	//release Ptex texture, it is not needed anymore
 	texture->release(); 
 }
 
+cudaPtexture cudaPtex::getTexture() {
+	return cudaPtexture{ getDataPointer(), getOffsetPointer(), getResLog2U(), getResLog2V(), getNumChannels(),m_DataType, m_isTriangle };
+}
 
 //TODO: Support half type
 template <typename T>
-void cudaPtex::readPtexture<T>(float* desArr, Ptex::PtexTexture (*texture)) {
-	static_assert(std::is_same<T,uint8_t>::value || std::is_same<T, uint16_t>::value || std::is_same<T, float>::value, "Ptex has a not supported type");
-
+void cudaPtex::readPtexture<T>(Ptex::PtexTexture (*texture),int totalDataSize, int extraBufferSize) {
+	static_assert(std::is_same<T,uint8_t>::value || std::is_same<T, uint16_t>::value || std::is_same<T, float>::value || std::is_same<T, half>::value, "Type is not supportet by Ptex");
+	
+	auto dataBuf = std::make_unique<T[]>(totalDataSize);
 	uint64_t offset = 0; //Data offset for desArr
 	for (int i = 0; i < texture->numFaces(); i++) {
 		std::vector<T> faceDataBuffer;
@@ -165,21 +196,18 @@ void cudaPtex::readPtexture<T>(float* desArr, Ptex::PtexTexture (*texture)) {
 		faceDataBuffer.resize(texSize);
 		texture->getData(i, faceDataBuffer.data(), 0);
 
-		//if it is a float it can be copied
-		if (std::is_same<T, float>::value) {	
-			for (int j = 0; j < texSize; j++) 
-				desArr[j + offset] = faceDataBuffer[j];
-		}
-		//uint8 and uint16 has to be converted to the range from 0 to 1
-		else {
-			T max = std::numeric_limits<T>::max();	//max val of uint8 and uint16 for division
-			float maxf = static_cast<float>(max);
-			for (int j = 0; j < texSize; j++) 
-				desArr[j + offset] = static_cast<float>(faceDataBuffer[j]) / maxf;
-		}
+		//copyData
+		for (int j = 0; j < texSize; j++)
+			dataBuf[j + offset] = faceDataBuffer[j];
+		
 		//add to offset
 		offset += texSize;
 	}
+
+	//copy to GPU
+	m_dataArr = make_udevptr_array<Device::CUDA, char, false>(totalDataSize * sizeof(T) + extraBufferSize);
+	cudaMemcpy(m_dataArr.get(), dataBuf.get(), totalDataSize * sizeof(T), cudaMemcpyDefault);
+
 }
 
 
