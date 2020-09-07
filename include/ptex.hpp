@@ -15,7 +15,7 @@ struct cudaPtexture;
 
 class cudaPtex {
 public:
-	enum TextureType {
+	enum class TextureType {
 		dt_uint8,
 		dt_uint16,
 		dt_half,
@@ -23,10 +23,16 @@ public:
 		dt_none
 	};
 
+	//Constructors
+	cudaPtex() {}
+	cudaPtex(const char* filepath, TextureType textureDataType = TextureType::dt_none, bool premultiply = true) {
+		loadFile(filepath, textureDataType ,premultiply);
+	}
 
-	//Loading the Ptex File into the class intern Cuda Array(m_data)
-	//it also fills the offset and u,v resolutions (in log2)
-	void loadFile(const char* filepath, bool premultiply = true);
+
+	//Loading the Ptex File into the class intern Cuda Array
+	//The Texure Type has to be the same as the ptex File or none (if dt_none is given, then the ptex Texture Type is used)
+	void loadFile(const char* filepath, TextureType textureDataType = TextureType::dt_none, bool premultiply = true);
 
 	//Getter functions
 	void* getDataPointer() const{
@@ -63,39 +69,32 @@ public:
 
 private:
 	bool m_loaded = false;
-	//unique_device_ptr < Device::CUDA, float[]   > m_data;			//1D Array with all the texel data.
-	//unique_device_ptr < Device::CUDA, uint32_t[]> m_offsets;		//1D Array with the offsets for the data array. Length == numFaces
-	//unique_device_ptr < Device::CUDA, uint8_t[] > m_ResLog2U;		//1D Array with the res of the U side in Log2. Length == numFaces
-	//unique_device_ptr < Device::CUDA, uint8_t[] > m_ResLog2V;		//1D Array with the res of the V side in Log2. Length == numFaces
-	unique_device_ptr < Device::CUDA, char[]	> m_dataArr;
-	float* m_dataPtr;
-	uint32_t* m_offsetPtr;
-	uint8_t* m_resLog2UPtr;
-	uint8_t* m_resLog2VPtr;
+	unique_device_ptr < Device::CUDA, char[]> m_dataArr;		//1D Array with all the texel data and extra Data. Sequence is Data->Offset->ResLog2U->ResLog2V
+	uint32_t* m_offsetPtr = nullptr;							//Pointer to the Start of the offsets in m_dataArr
+	uint8_t* m_resLog2UPtr = nullptr;							//Pointer to the Start of resLog2U in m_dataArr
+	uint8_t* m_resLog2VPtr = nullptr;							//Pointer to the Start of resLog2V in m_dataArr
 
-	TextureType m_DataType = TextureType::dt_none;
-	uint8_t m_numChannels = 0;										//Number of color channels in the texture
-	uint32_t m_numFaces = 0;										//Number of faces
-	bool m_isTriangle = false;										//The Indexes for triangles are calculated differently due to different save format
-	uint32_t m_totalDataSize;
+	TextureType m_DataType = TextureType::dt_none;				//Texture Type.
+	uint8_t m_numChannels = 0;									//Number of color channels in the texture
+	uint32_t m_numFaces = 0;									//Number of faces
+	bool m_isTriangle = false;									//The Indexes for triangles are calculated differently due to different save format
+	uint32_t m_totalDataSize = 0;
 
-	//Inter function used in load file to read the texture face by face and save
-	//the received data in the desArr. There are 4 possible types in which the Ptex texture was saved:
-	//uint8_t -> conversion to float [0..1]
-	//uint16_t -> conversion to float [0..1]
-	//float -> just copy
-	//half -> currently not supported
+	//Inter function used in load file to read the texture face by face and copy the 
+	//Data to the GPU(m_dataArr). There are 4 possible types in which the Ptex texture was saved:
+	//uint8_t ; uint16_t ; float ; half
 	template<typename T>
 	void readPtexture(Ptex::PtexTexture (*texture), int totalDataSize, int extraBufferSize);
 };
 
+//Definition of the struct defined above
 struct cudaPtexture {
 	void* data;
 	uint32_t* offset;
 	uint8_t* ResLog2U;
 	uint8_t* ResLog2V;
 	uint8_t numChannels;
-	cudaPtex::TextureType texType = cudaPtex::TextureType::dt_none;
+	cudaPtex::TextureType texType;
 	bool isTriangle;
 };
 
