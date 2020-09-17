@@ -16,7 +16,7 @@
 
 using namespace mufflon;
 
-typedef uint8_t DATA_TYPE;
+typedef uint8_t DATA_TYPE;	//shortcut for changing Datatype
 
 //Test Kernel. It returns an array with all read texels
 __global__ void cudaTest2(DATA_TYPE* res, int faceId, int dimX, int dimY, cudaPtexture tex) {
@@ -43,16 +43,17 @@ __global__ void cudaTest2(DATA_TYPE* res, int faceId, int dimX, int dimY, cudaPt
 
 int main(){
 
-	int face = 176;	//FaceID, if bigger than numFaces, invalid results are printed
+	int face = 1;	//FaceID, if bigger than numFaces, invalid results are printed
 
 
-	//std::string filepath = "models/teapot/teapot.ptx";		//<<DT: uint8
-	std::string filepath = "models/bunny/bunny.ptx";			//<<DT: uint8
+	std::string filepath = "models/teapot/teapot.ptx";		//<<DT: uint8
+	//std::string filepath = "models/bunny/bunny.ptx";			//<<DT: uint8
 	//std::string filepath = "models/triangle/triangle.ptx";	//<<DT: float
 
 	//Fill the cuda Texture object
 	cudaPtex pTexture;
 	pTexture.loadFile(filepath.c_str(), cudaPtex::TextureType::dt_none, true);
+	pTexture.setFilter(cudaPtex::FilterMode::BILINEAR);
 
 	//Ptex texture as comparison
 	Ptex::PtexTexture* texture;
@@ -80,7 +81,7 @@ int main(){
 	}
 
 	//Filter for correct u/v readings on triangles
-	Ptex::PtexFilter::FilterType filterType = Ptex::PtexFilter::FilterType::f_point;
+	Ptex::PtexFilter::FilterType filterType = Ptex::PtexFilter::FilterType::f_bilinear;
 	Ptex::PtexFilter::Options opts(filterType);
 	filter = Ptex::PtexFilter::getFilter(texture, opts);
 
