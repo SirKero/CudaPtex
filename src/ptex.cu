@@ -25,17 +25,19 @@ unsigned int pow2(const uint8_t pow) {
 	return result;
 }
 
+//mix ffunction for float
 __device__ float mixf(float x, float y, float a) {
 	return x * (1.0f - a) + y * a;
 }
 
+//mix function for uInt
 __device__ uint8_t mixUI(unsigned int x, unsigned int y, float a) {
 	x = __float2uint_rz(__uint2float_rz(x) * (1.0f - a));
 	y = __float2uint_rz(__uint2float_rz(y) * a);
 	return x + y;
 }
 
-
+//Gets the texel Index for given UV-Coordinate
 __device__
 int getTexelIndex( float u, float v,const uint8_t &numChannels, const unsigned int &offset, const unsigned int& ResU, const unsigned int& ResV, const bool& isTriangle) {
 	int index;
@@ -59,20 +61,19 @@ int getTexelIndex( float u, float v,const uint8_t &numChannels, const unsigned i
 			tmpIndex = __float2int_rz((resf * resf - 1.0f) - (vIdx + uIdx * resf));
 		}
 
-		int iU = tmpIndex % ResU;
-		int iV = tmpIndex / ResV;
-
-		index = offset + numChannels * (iU + iV * ResU);
+		index = offset + numChannels * tmpIndex;
 	}
 
 	return index;
 }
 
+//Returns the Adjacent Edge for a given Edge
 __device__
 cudaPtex::EdgeId getAdjEdge(const int edgeID, const uint8_t adjEdge) {
 	return cudaPtex::EdgeId((adjEdge >> (2 * edgeID)) & 3);
 }
 
+// Point sampeling for Ptex
 __device__
 void PtexelFetchPoint(void* res,const int& faceIdx,const float& u,const float& v, const uint8_t& numChannels, void* texArr,
 	const uint32_t* texOffsetArr, const uint8_t* ResLog2U, const uint8_t* ResLog2V, cudaPtex::TextureType texType, bool isTriangle) {
@@ -120,9 +121,11 @@ void PtexelFetchBilinear(void* res, const int& faceIdx, const float& u, const fl
 
 	unsigned int offset = texOffsetArr[faceIdx];
 	
-	//Clamp Filter between -1 and 1
-	filterWidthU = fminf(fmaxf(filterWidthU, -1.0f), 1.0f);	
-	filterWidthV = fminf(fmaxf(filterWidthV, -1.0f), 1.0f);
+	float pixelSizeU = 1.0f / __uint2float_rz(ResU);
+	float pixelSizeV = 1.0f / __uint2float_rz(ResV);
+	//Clamp Filter between the size of 1 pixel and 1
+	filterWidthU = fminf(fmaxf(filterWidthU, pixelSizeU), 1.0f);	
+	filterWidthV = fminf(fmaxf(filterWidthV, pixelSizeV), 1.0f);
 
 	//Landing point is always bottom left
 	float resF[2] = { __uint2float_rz(ResU), __uint2float_rz(ResV) };
@@ -134,124 +137,208 @@ void PtexelFetchBilinear(void* res, const int& faceIdx, const float& u, const fl
 	kernelU[2] = { kernelU[0] + filterWidthU }; kernelV[2] = { kernelV[0] + filterWidthV };	//up right from point
 	kernelU[3] = { kernelU[0]}; kernelV[3] = { kernelV[0] + filterWidthV };	//up from point
 
+	//Check if Kernel is overstepping texture (is different for triangle and quad)
 	bool inOtherTex[3];
-	//Check if Kernel is overstepping texture
-	for (int i = 1; i < 4; i++) {
-		inOtherTex[i - 1] = kernelU[i] > 1.0f || kernelU[i] < 0.0f || kernelV[i] > 1.0f || kernelV[i] < 0.0f ? true : false;
+	if (isTriangle) {
+		for (int i = 1; i < 4; i++)
+			inOtherTex[i - 1] = kernelU[i] > 1.0f || kernelU[i] < 0.0f || kernelV[i] > 1.0f || kernelV[i] < 0.0f || kernelU[i] + kernelV[i] > 1.0f ? true : false;
 	}
+	else {
+		for (int i = 1; i < 4; i++)
+			inOtherTex[i - 1] = kernelU[i] > 1.0f || kernelU[i] < 0.0f || kernelV[i] > 1.0f || kernelV[i] < 0.0f ? true : false;
+	}
+	
 
 	int faceIndices[4]; faceIndices[0] = faceIdx;
 	for (int i = 1; i < 4; i++) {
 		if (inOtherTex[i - 1]) {
-			//Get side
+			//Get side (triangles ignore the 4th side)
 			cudaPtex::EdgeId eid;
-			if (kernelU[i] > 1.0f) { 
-				eid = cudaPtex::EdgeId::e_right;
-			}
-			else if(kernelV[i] > 1.0f) {
-				eid = cudaPtex::EdgeId::e_top;
-			}
-			else if(kernelV[i] < 0.0f) {
-				eid = cudaPtex::EdgeId::e_bottom;
+			if (isTriangle) {
+				float minSide = fminf(kernelU[i], kernelV[i]);
+				if (kernelV[i] < 0.0f && kernelV[i] == minSide)
+					eid = static_cast<cudaPtex::EdgeId>(0);	//Outside U-Side			
+				else if (kernelU[i] < 0.0f && kernelU[i] == minSide)
+					eid = static_cast<cudaPtex::EdgeId>(2);	//Outside V-Side
+				else
+					eid = static_cast<cudaPtex::EdgeId>(1);	//Outside opposite from origin
 			}
 			else {
-				eid = cudaPtex::EdgeId::e_left;
+				if (kernelU[i] > 1.0f) 
+					eid = cudaPtex::EdgeId::e_right;
+				else if (kernelV[i] > 1.0f) 
+					eid = cudaPtex::EdgeId::e_top;
+				else if (kernelV[i] < 0.0f)
+					eid = cudaPtex::EdgeId::e_bottom;
+				else
+					eid = cudaPtex::EdgeId::e_left;
 			}
+			
 
 			faceIndices[i] = adjFaces[faceIdx * 4 + static_cast<int>(eid)];
 			cudaPtex::EdgeId eiDir = getAdjEdge(static_cast<int>(eid), adjEdges[faceIdx]);
-
 			float kernelNew = 0.0f;
-			//Change UV depending on dir
-			switch (eid)
-			{
-			case cudaPtex::EdgeId::e_right:
-				kernelNew = kernelU[i] - 1.0f;
-				switch (eiDir)	
+			//Change UV depending on dir (triangle)
+			//For triangles the coordinate is projected in a strait line to positive.
+			//So if u = -0.1, v=0.6 and w=0.5 then it is projected to u=0.1, v=0.5, w=0.4
+			if (isTriangle) {
+				switch (eid)
 				{
-				case cudaPtex::EdgeId::e_bottom:
-					kernelU[i] = 1.0f - kernelV[i];
-					kernelV[i] = kernelNew;
+				case cudaPtex::EdgeId::e_bottom:	//(0)Outside of U-Side
+					switch (eiDir)
+					{
+					case cudaPtex::EdgeId::e_bottom:	//(0) no switch
+						kernelU[i] += kernelV[i];
+						kernelV[i] = 0.0f + fabsf(kernelV[i]); //KernelV is negative
+						break;
+					case cudaPtex::EdgeId::e_right:		//(1) switch u and w coordinate
+						kernelNew = 1 - kernelU[i] + kernelV[i]; //w
+						kernelU[i] += kernelV[i];
+						kernelV[i] = kernelNew + kernelV[i];
+						break;
+					case cudaPtex::EdgeId::e_top:		//(2) switch u and v
+						kernelNew = kernelU[i] + kernelV[i];
+						kernelU[i] = 0.0f + fabsf(kernelV[i]);
+						kernelV[i] = kernelNew;
+						break;
+					}
 					break;
+				case cudaPtex::EdgeId::e_right:		//(1)Outside opposide from Origin
+					switch (eiDir)
+					{
+					case cudaPtex::EdgeId::e_bottom:	//(0) switch v and w
+						kernelNew = 1 - kernelU[i] + kernelV[i]; //w
+						kernelU[i] += kernelNew;
+						kernelV[i] = 0.0f + fabsf(kernelNew);
+						break;
+					case cudaPtex::EdgeId::e_right:		//(1) No switch
+						kernelNew = 1- kernelU[i] + kernelV[i];	//w , always negative
+						kernelU[i] += kernelNew;	
+						kernelV[i] += kernelNew;
+						break;
+					case cudaPtex::EdgeId::e_top:		//(2) switch w and u
+						kernelNew = 1 - kernelU[i] + kernelV[i]; //w
+						kernelU[i] = 0.0f + fabsf(kernelNew);
+						kernelV[i] += kernelNew;
+						break;
+					}
+					break;
+				case cudaPtex::EdgeId::e_top:		//(2)Outside of V-Side
+					switch (eiDir)
+					{
+					case cudaPtex::EdgeId::e_bottom:	//(0) switch u and v
+						kernelNew = kernelV[i] + kernelU[i];
+						kernelV[i] = 0.0f + fabsf(kernelU[i]);
+						kernelU[i] = kernelNew;
+						break;
+					case cudaPtex::EdgeId::e_right:		//(1) switch u and w
+						kernelNew = 1 - kernelU[i] + kernelV[i]; //w
+						kernelV[i] += kernelU[i];
+						kernelU[i] = kernelNew + kernelU[i];
+						break;
+					case cudaPtex::EdgeId::e_top:		//(2) no switch
+						kernelV[i] += kernelU[i];
+						kernelU[i] = 0.0f - kernelU[i]; //KernelU is negative
+						break;
+					}
+					break;
+				} //end switch (eid)
+			}//end if(isTriangle)
+			
+			//Change UV depending on direction (Quad). This is simple, as
+			//only the UV have to be changed depending on the direction they 
+			//enter the other quad
+			else {
+				switch (eid)
+				{
 				case cudaPtex::EdgeId::e_right:
-					kernelV[i] = 1.0f - kernelV[i];
-					kernelU[i] = 1.0f - kernelNew;
+					kernelNew = kernelU[i] - 1.0f;
+					switch (eiDir)
+					{
+					case cudaPtex::EdgeId::e_bottom:
+						kernelU[i] = 1.0f - kernelV[i];
+						kernelV[i] = kernelNew;
+						break;
+					case cudaPtex::EdgeId::e_right:
+						kernelV[i] = 1.0f - kernelV[i];
+						kernelU[i] = 1.0f - kernelNew;
+						break;
+					case cudaPtex::EdgeId::e_top:
+						kernelU[i] = kernelV[i];
+						kernelV[i] = 1.0f - kernelNew;
+						break;
+					case cudaPtex::EdgeId::e_left:
+						kernelU[i] = kernelNew;
+						break;
+					}
 					break;
 				case cudaPtex::EdgeId::e_top:
-					kernelU[i] = kernelV[i];
-					kernelV[i] = 1.0f - kernelNew;
+					kernelNew = kernelV[i] - 1.0f;
+					switch (eiDir)
+					{
+					case cudaPtex::EdgeId::e_bottom:
+						kernelV[i] = kernelNew;
+						break;
+					case cudaPtex::EdgeId::e_right:
+						kernelV[i] = kernelU[i];
+						kernelU[i] = 1.0f - kernelNew;
+						break;
+					case cudaPtex::EdgeId::e_top:
+						kernelU[i] = 1.0f - kernelU[i];
+						kernelV[i] = 1.0f - kernelNew;
+						break;
+					case cudaPtex::EdgeId::e_left:
+						kernelV[i] = 1.0f - kernelU[i];
+						kernelU[i] = kernelNew;
+						break;
+					}
 					break;
-				case cudaPtex::EdgeId::e_left:
-					kernelU[i] = kernelNew;
-					break;
-				}
-				break;
-			case cudaPtex::EdgeId::e_top:
-				kernelNew = kernelV[i] - 1.0f;
-				switch (eiDir)
-				{
 				case cudaPtex::EdgeId::e_bottom:
-					kernelV[i] = kernelNew;
-					break;
-				case cudaPtex::EdgeId::e_right:
-					kernelV[i] = kernelU[i];
-					kernelU[i] = 1.0f - kernelNew;
-					break;
-				case cudaPtex::EdgeId::e_top:
-					kernelU[i] = 1.0f - kernelU[i];
-					kernelV[i] = 1.0f - kernelNew;
-					break;
-				case cudaPtex::EdgeId::e_left:
-					kernelV[i] = 1.0f - kernelU[i];
-					kernelU[i] = kernelNew;
-					break;
-				}
-				break;
-			case cudaPtex::EdgeId::e_bottom:
-				kernelNew = kernelV[i] + 1.0f;
-				switch (eiDir)
-				{
-				case cudaPtex::EdgeId::e_bottom:
-					kernelU[i] = 1.0f - kernelU[i];
-					kernelV[i] = 1.0f - kernelNew;
-					break;
-				case cudaPtex::EdgeId::e_right:
-					kernelV[i] = 1.0f - kernelU[i];
-					kernelU[i] = kernelNew;
-					break;
-				case cudaPtex::EdgeId::e_top:
-					kernelV[i] = kernelNew;
+					kernelNew = kernelV[i] + 1.0f;
+					switch (eiDir)
+					{
+					case cudaPtex::EdgeId::e_bottom:
+						kernelU[i] = 1.0f - kernelU[i];
+						kernelV[i] = 1.0f - kernelNew;
+						break;
+					case cudaPtex::EdgeId::e_right:
+						kernelV[i] = 1.0f - kernelU[i];
+						kernelU[i] = kernelNew;
+						break;
+					case cudaPtex::EdgeId::e_top:
+						kernelV[i] = kernelNew;
+						break;
+					case cudaPtex::EdgeId::e_left:
+						kernelV[i] = kernelU[i];
+						kernelU[i] = 1.0f - kernelNew;
+						break;
+					}
 					break;
 				case cudaPtex::EdgeId::e_left:
-					kernelV[i] = kernelU[i];
-					kernelU[i] = 1.0f - kernelNew;
+					kernelNew = kernelU[i] + 1.0f;
+					switch (eiDir)
+					{
+					case cudaPtex::EdgeId::e_bottom:
+						kernelU[i] = kernelV[i];
+						kernelV[i] = 1.0f - kernelNew;
+						break;
+					case cudaPtex::EdgeId::e_right:
+						kernelU[i] = kernelNew;
+						break;
+					case cudaPtex::EdgeId::e_top:
+						kernelU[i] = 1.0f - kernelV[i];
+						kernelV[i] = kernelNew;
+						break;
+					case cudaPtex::EdgeId::e_left:
+						kernelU[i] = 1.0f - kernelNew;
+						kernelV[i] = 1.0f - kernelV[i];
+						break;
+					}
 					break;
-				}
-				break;
-			case cudaPtex::EdgeId::e_left:
-				kernelNew = kernelU[i] + 1.0f;
-				switch (eiDir)
-				{
-				case cudaPtex::EdgeId::e_bottom:
-					kernelU[i] = kernelV[i];
-					kernelV[i] = 1.0f - kernelNew;
-					break;
-				case cudaPtex::EdgeId::e_right:
-					kernelU[i] = kernelNew;
-					break;
-				case cudaPtex::EdgeId::e_top:
-					kernelU[i] = 1.0f - kernelV[i];
-					kernelV[i] = kernelNew;
-					break;
-				case cudaPtex::EdgeId::e_left:
-					kernelU[i] = 1.0f - kernelNew;
-					kernelV[i] = 1.0f - kernelV[i];
-					break;
-				}
-				break;
-			}
-
+				} //end switch (eid)
+			}//end else (isTriangle)
 		}
+		//If the UVs are in the same texture, the faceIndex is the same
 		else {
 			faceIndices[i] = faceIdx;
 		}
@@ -261,6 +348,7 @@ void PtexelFetchBilinear(void* res, const int& faceIdx, const float& u, const fl
 	int index[4];
 	index[0] = getTexelIndex(kernelU[0], kernelV[0], numChannels, offset, ResU, ResV, isTriangle);
 	for (int i = 1; i < 4; i++) {
+		//in case that the face has no neighbor (then faceIndices should be -1)
 		if (faceIndices[i] != -1) {
 			index[i] = getTexelIndex(kernelU[i], kernelV[i], numChannels, texOffsetArr[faceIndices[i]], ResU, ResV, isTriangle);
 		}
@@ -318,8 +406,8 @@ void PtexelFetch(void* res, int faceIdx, float u, float v, int numChannels, void
 	const uint32_t* texOffsetArr, const uint8_t* ResLog2U, const uint8_t* ResLog2V, const int32_t* adjFaces,
 	const uint8_t* adjEdges, cudaPtex::TextureType texType, cudaPtex::FilterMode filterMode, float filterWidthU, float filterWidthV, bool isTriangle) {
 	
-	if (filterMode == cudaPtex::FilterMode::BILINEAR && !isTriangle) {
-		PtexelFetchBilinear(res, faceIdx, u, v, numChannels, texArr, texOffsetArr, ResLog2U, ResLog2V, adjFaces, adjEdges , texType, 0.1f, 0.1f,isTriangle);
+	if (filterMode == cudaPtex::FilterMode::BILINEAR) {
+		PtexelFetchBilinear(res, faceIdx, u, v, numChannels, texArr, texOffsetArr, ResLog2U, ResLog2V, adjFaces, adjEdges , texType, filterWidthU, filterWidthV,isTriangle);
 	}
 	else {
 		PtexelFetchPoint(res, faceIdx, u, v, numChannels, texArr, texOffsetArr, ResLog2U, ResLog2V, texType, isTriangle);
@@ -423,7 +511,7 @@ void cudaPtex::loadFile(const char* filepath, TextureType textureDataType, bool 
 		}
 	}
 
-	//Check in which Data type the ptex file is in an read accordingly
+	//Check in which Data type the ptex file is in and read accordingly
 	switch (ptexDataType) {
 	case Ptex::DataType::dt_uint8: 
 		readPtexture<uint8_t>(texture, totalDataSize, extraBufferSize);

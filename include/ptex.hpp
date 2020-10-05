@@ -37,12 +37,6 @@ public:
 		e_left
 	};
 
-	//TODO: Implement border modes
-	enum BorderMode {
-		m_clamp,
-		m_black,
-		m_periodic
-	};
 
 	//Constructors
 	cudaPtex() {}

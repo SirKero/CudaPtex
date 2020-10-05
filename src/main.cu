@@ -43,7 +43,7 @@ __global__ void cudaTest2(DATA_TYPE* res, int faceId, int dimX, int dimY, cudaPt
 
 int main(){
 
-	int face = 1;	//FaceID, if bigger than numFaces, invalid results are printed
+	int face = 0;	//FaceID, if bigger than numFaces, invalid results are printed
 
 
 	std::string filepath = "models/teapot/teapot.ptx";		//<<DT: uint8
